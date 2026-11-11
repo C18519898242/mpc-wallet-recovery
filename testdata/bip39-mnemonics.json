@@ -1,0 +1,22 @@
+{
+  "test_only": true,
+  "wordlist": "english",
+  "entropy_derivation": "SHA-256 of the UTF-8 string mpc-wallet-recovery/test-only/<party_id>",
+  "parties": [
+    {
+      "party_id": "alice",
+      "entropy_hex": "4dc940f619b5f32db14d00c1209f58d0ed0616aed621ba1fb4cc60fe20c13fc0",
+      "mnemonic": "evidence energy diesel cricket game nothing share parade scorpion agent stomach peace spare area robust service ring world credit sea tilt gauge yellow average"
+    },
+    {
+      "party_id": "bob",
+      "entropy_hex": "5dbc1705f98f4bc81aab05b581daf11f267e1500b18adfb59bbc94075893cdf5",
+      "mnemonic": "frozen thing scrap vessel visa tomato height gaze remain attract rough dinner gun appear actress course text proud upset chimney intact enemy daughter permit"
+    },
+    {
+      "party_id": "carol",
+      "entropy_hex": "3be596189d81adac31bda68019092458348e0c42c622c41ee07296735f64f8dc",
+      "mnemonic": "desk coach mail deposit bracket stock shoulder regular length sign empower race employ alert arch session series warfare bronze coconut curious raven toddler limb"
+    }
+  ]
+}
