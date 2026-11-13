@@ -3,12 +3,26 @@ package recovery
 import (
 	"crypto/hmac"
 	"crypto/sha512"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/tyler-smith/go-bip39"
+)
+
+const (
+	purposeMasterKeyDerive  uint32 = 0
+	algorithmECDSASecp256k1 uint32 = 0
+	alternativeIndex        uint32 = 0
+)
+
+var (
+	// ErrMnemonicChecksum indicates that the words do not match the BIP-39 checksum.
+	ErrMnemonicChecksum = errors.New("invalid BIP-39 mnemonic checksum")
+	// ErrMnemonicWord indicates that a word is absent from the BIP-39 wordlist.
+	ErrMnemonicWord = errors.New("mnemonic contains an unknown BIP-39 word")
 )
 
 // CMPPublicContribution contains the data a node shares with the other nodes
@@ -24,6 +38,12 @@ type CMPPublicContribution struct {
 type CMPContribution struct {
 	Scalar [32]byte
 	Public CMPPublicContribution
+}
+
+// CMPPrivateKey is the recovered secp256k1 master scalar and its chain code.
+type CMPPrivateKey struct {
+	Scalar    [32]byte
+	ChainCode [32]byte
 }
 
 // GenerateMnemonic creates a 24-word English BIP-39 phrase from 256 random bits.
@@ -46,24 +66,27 @@ func DeriveCMPContribution(mnemonic string) (CMPContribution, error) {
 	}
 	entropy, err := bip39.EntropyFromMnemonic(strings.Join(words, " "))
 	if err != nil {
-		return CMPContribution{}, errors.New("invalid BIP-39 mnemonic")
+		if errors.Is(err, bip39.ErrChecksumIncorrect) {
+			return CMPContribution{}, ErrMnemonicChecksum
+		}
+		// With exactly 24 words, the remaining decoder error contains the unknown word.
+		return CMPContribution{}, ErrMnemonicWord
 	}
 	defer clear(entropy)
 
 	block := hmacSHA512([]byte("MPC seed"), entropy)
 	defer clear(block[:])
-	// The four-byte fields encode master-key purpose, ECDSA/secp256k1,
-	// and alternative index zero, respectively.
-	for range 3 {
+	for _, field := range [...]uint32{purposeMasterKeyDerive, algorithmECDSASecp256k1, alternativeIndex} {
 		var input [36]byte
 		copy(input[:], block[32:])
+		binary.BigEndian.PutUint32(input[32:], field)
 		block = hmacSHA512(block[:32], input[:])
 		clear(input[:])
 	}
 
 	var scalar secp256k1.ModNScalar
 	defer scalar.Zero()
-	scalar.SetByteSlice(block[:32]) // Reduce the HMAC output modulo the curve order.
+	_ = scalar.SetByteSlice(block[:32]) // Reduction modulo the curve order is intentional.
 	if scalar.IsZero() {
 		return CMPContribution{}, errors.New("zero CMP contribution")
 	}
@@ -74,8 +97,23 @@ func DeriveCMPContribution(mnemonic string) (CMPContribution, error) {
 	return contribution, nil
 }
 
+// VerifyCMPBackup checks one mnemonic against the saved public contribution for
+// its node, including the chain code share. The check can run locally on that node.
+func VerifyCMPBackup(mnemonic string, expected CMPPublicContribution) error {
+	contribution, err := DeriveCMPContribution(mnemonic)
+	if err != nil {
+		return err
+	}
+	clear(contribution.Scalar[:])
+	if contribution.Public != expected {
+		return errors.New("mnemonic does not match the node's public contribution")
+	}
+	return nil
+}
+
 // CombineCMPPublicContributions computes the shared inputs to cmp.ImportKey.
 // Supply exactly one authenticated contribution from each participant.
+// The V2 chain code shares are summed modulo 2^256.
 func CombineCMPPublicContributions(contributions [3]CMPPublicContribution) (CMPPublicContribution, error) {
 	var wallet CMPPublicContribution
 	var total secp256k1.JacobianPoint
@@ -114,14 +152,14 @@ func CombineCMPPublicContributions(contributions [3]CMPPublicContribution) (CMPP
 
 // RecoverCMPPrivateKey reconstructs the full signing key on an offline machine.
 // expected must come from a trusted record made when the wallet was created.
-func RecoverCMPPrivateKey(mnemonics [3]string, expected CMPPublicContribution) ([32]byte, error) {
+func RecoverCMPPrivateKey(mnemonics [3]string, expected CMPPublicContribution) (CMPPrivateKey, error) {
 	var total secp256k1.ModNScalar
 	defer total.Zero()
 	var public [3]CMPPublicContribution
 	for i, mnemonic := range mnemonics {
 		contribution, err := DeriveCMPContribution(mnemonic)
 		if err != nil {
-			return [32]byte{}, fmt.Errorf("mnemonic %d: %w", i+1, err)
+			return CMPPrivateKey{}, fmt.Errorf("mnemonic %d: %w", i+1, err)
 		}
 		public[i] = contribution.Public
 		var scalar secp256k1.ModNScalar
@@ -132,12 +170,15 @@ func RecoverCMPPrivateKey(mnemonics [3]string, expected CMPPublicContribution) (
 	}
 	wallet, err := CombineCMPPublicContributions(public)
 	if err != nil {
-		return [32]byte{}, err
+		return CMPPrivateKey{}, err
 	}
 	if wallet != expected {
-		return [32]byte{}, errors.New("mnemonics do not match the expected wallet public key and chain code")
+		return CMPPrivateKey{}, errors.New("mnemonics do not match the expected wallet public key and chain code")
 	}
-	return total.Bytes(), nil
+	if total.IsZero() || cmpPublicKey(&total) != expected.PublicKey {
+		return CMPPrivateKey{}, errors.New("recovered key does not match the expected wallet public key")
+	}
+	return CMPPrivateKey{Scalar: total.Bytes(), ChainCode: wallet.ChainCode}, nil
 }
 
 func hmacSHA512(key, data []byte) (out [64]byte) {
