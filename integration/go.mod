@@ -7,7 +7,10 @@ require (
 	github.com/taurusgroup/multi-party-sig v0.0.0-20261110150323-163e25a3a0a8
 )
 
-require github.com/tyler-smith/go-bip39 v1.1.0 // indirect
+require (
+	filippo.io/edwards25519 v1.0.0-rc.1 // indirect
+	github.com/tyler-smith/go-bip39 v1.1.0 // indirect
+)
 
 require (
 	github.com/C18519898242/mpc-wallet-recovery v0.0.0

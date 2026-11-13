@@ -1,12 +1,13 @@
 # MPC Wallet Recovery
 
-用于备份和离线恢复 3-of-3 MPC 钱包的 Go 模块。目前支持 CMP / ECDSA（secp256k1）主密钥。
+用于备份和离线恢复 3-of-3 MPC 钱包的 Go 模块。每个节点用同一组 24 词分别派生 CMP / ECDSA 和 FROST / Ed25519 的主密钥贡献。
 
 | 目录 | 用途 |
 | --- | --- |
 | `recovery` | 助记词派生与密钥恢复 |
 | `testdata` | 固定测试向量 |
 | `integration` | 使用 CMP fork 的三方建钥和签名测试 |
+| `integration/frost` | 使用 FROST fork 的三方建钥和签名测试 |
 
 当前提供 Go API。离线 CLI 尚未实现。
 
@@ -29,6 +30,14 @@ CMP 需要包含 `ImportKey` 的分支版本。`integration/go.mod` 将上游模
 集成测试锁定 fork 提交 `163e25a3`。相对其上游基线 `d489e309`，fork 增加了私钥贡献导入及其会话绑定和聚合公钥校验。影响建钥耗时的 `ZKModIterations = 128` 已存在于该基线。
 导入协议核对聚合后的公钥，各节点负责确保自己发布的公开数据和本地提交的贡献来自同一组词。
 
+## 创建并备份 FROST 钱包
+
+1. 各节点用上面同一组词调用 `recovery.DeriveEd25519Contribution`。只交换 `Public`，并用 `recovery.VerifyEd25519Backup` 核对本地备份。
+2. 各节点用 `recovery.CombineEd25519PublicContributions` 得到主公钥和 chain code。保存这两项及三份公开贡献，供离线恢复核对。
+3. 各节点调用 `frost.NewKeygenStateWithContribution(selfID, ids, contribution.Scalar[:], wallet.PublicKey[:], sessionID, timeout)`。用同一个唯一会话 ID，通过认证、加密且支持可靠广播的传输层运行 DKG。
+
+离线调用 `recovery.RecoverEd25519PrivateKey(words, wallet)` 返回主签名标量和 chain code。标量是 32 字节规范小端编码，可用于支持标量的 Ed25519 签名器。只接受 RFC 8032 seed 的接口需要另一种密钥格式。
+
 ## 离线恢复
 
 在离线环境中，可用 `recovery.VerifyCMPBackup` 逐组核对助记词和对应节点的记录，以定位抄错的备份。再将三组词和建钱包时独立保存的 `wallet` 交给
@@ -44,5 +53,7 @@ secp256k1 主私钥 `Scalar` 及其 `ChainCode`。创建和日常签名阶段无
 
 - 根目录运行 `go test ./...`，核对官方向量和恢复校验。
 - 在 `integration` 目录运行 `go test ./... -timeout=120s`，验证三方建钥、RID 一致性，以及 MPC 签名和离线私钥签名都能通过原公钥验签。
+- 将新版 `frost-ed25519` 放在本仓库旁边，在 `integration/frost` 运行 `go test ./...`，验证三方 FROST DKG 和离线签名使用同一个公钥。
 
 官方向量由 `@safeheron/master-key-derive@2.0.1` 从公开测试词生成。可在临时目录用 `npm install --ignore-scripts --save-exact @safeheron/master-key-derive@2.0.1` 安装该包，将 `NODE_PATH` 指向临时目录的 `node_modules`，再从项目根目录运行 `node testdata/generate-safeheron-cmp.cjs`，将输出与 `testdata/safeheron-cmp-v2.json` 对照。
+给生成命令加上 `ed25519` 参数可重新生成 `testdata/safeheron-ed25519-v2.json`。

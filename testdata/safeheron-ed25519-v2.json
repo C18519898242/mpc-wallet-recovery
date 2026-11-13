@@ -1,0 +1,31 @@
+{
+  "source": "@safeheron/master-key-derive@2.0.1",
+  "algorithm": "EDDSA_ED25519",
+  "purpose": "MASTER_KEY_DERIVE",
+  "alternative_index": 0,
+  "parties": [
+    {
+      "party_id": "alice",
+      "scalar": "3c8a9de03d95ffdb17e720f3d43a44cce79f20336678495091200ec75c64030a",
+      "chain_code": "fdd14b4c3c4a2f5e524b7cf1df9a13254f4bbbbedb3478e867c5f9219e62a70c",
+      "public_key": "0c5ea1570d6bdde02a814da5934e4fdc4603f329c36fef32eda3c2bc645714a4"
+    },
+    {
+      "party_id": "bob",
+      "scalar": "e4e46c96c2489f7253573650a63a8f03872ed6bfbf23d86c218619499199cb02",
+      "chain_code": "1cabb60e386bf51e9b8320304475945b44e4be89ee5e0c3a004548b18fa395ab",
+      "public_key": "f754016482d459dc3f5872bb069a4defa1a12d368b0de2b941423a316d1aaf50"
+    },
+    {
+      "party_id": "carol",
+      "scalar": "e5ab8cd434ca4f68bbabc17c5a69c39297791b6870b63d0fbd84f1b1c2bcf201",
+      "chain_code": "ab1b0d42edfa0202ee1587fe5fa2f77a9218575baed5a4329b598b73d355aad1",
+      "public_key": "5d969b95731ed40e86c80b373179a3b0f6bf37193a31ac335a92b09f6c1c358f"
+    }
+  ],
+  "wallet": {
+    "scalar": "051b974b35a8eeb626ea18c0d5de96620648125b96525fcc6f2b19c2b0bac10e",
+    "chain_code": "c5980e9d62b0267fdbe4252083b29efb2648d1a4786829550364cd47015be788",
+    "public_key": "9cb2350d89e9939ef51b6312c28300b0dc3a445e014fd1117f1f4dbca525d150"
+  }
+}

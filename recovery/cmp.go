@@ -15,6 +15,7 @@ import (
 const (
 	purposeMasterKeyDerive  uint32 = 0
 	algorithmECDSASecp256k1 uint32 = 0
+	algorithmEdDSAEd25519   uint32 = 1
 	alternativeIndex        uint32 = 0
 )
 
@@ -60,30 +61,11 @@ func GenerateMnemonic() (string, error) {
 // DeriveCMPContribution uses the Safeheron V2 secp256k1 master contribution
 // derivation, starting with the BIP-39 entropy and alternative index zero.
 func DeriveCMPContribution(mnemonic string) (CMPContribution, error) {
-	words := strings.Fields(mnemonic)
-	if len(words) != 24 {
-		return CMPContribution{}, errors.New("expected a 24-word BIP-39 mnemonic")
-	}
-	entropy, err := bip39.EntropyFromMnemonic(strings.Join(words, " "))
+	block, err := deriveMasterContribution(mnemonic, algorithmECDSASecp256k1)
 	if err != nil {
-		if errors.Is(err, bip39.ErrChecksumIncorrect) {
-			return CMPContribution{}, ErrMnemonicChecksum
-		}
-		// With exactly 24 words, the remaining decoder error contains the unknown word.
-		return CMPContribution{}, ErrMnemonicWord
+		return CMPContribution{}, err
 	}
-	defer clear(entropy)
-
-	block := hmacSHA512([]byte("MPC seed"), entropy)
 	defer clear(block[:])
-	for _, field := range [...]uint32{purposeMasterKeyDerive, algorithmECDSASecp256k1, alternativeIndex} {
-		var input [36]byte
-		copy(input[:], block[32:])
-		binary.BigEndian.PutUint32(input[32:], field)
-		block = hmacSHA512(block[:32], input[:])
-		clear(input[:])
-	}
-
 	var scalar secp256k1.ModNScalar
 	defer scalar.Zero()
 	_ = scalar.SetByteSlice(block[:32]) // Reduction modulo the curve order is intentional.
@@ -95,6 +77,34 @@ func DeriveCMPContribution(mnemonic string) (CMPContribution, error) {
 	contribution.Public.PublicKey = cmpPublicKey(&scalar)
 	copy(contribution.Public.ChainCode[:], block[32:])
 	return contribution, nil
+}
+
+func deriveMasterContribution(mnemonic string, algorithm uint32) ([64]byte, error) {
+	words := strings.Fields(mnemonic)
+	if len(words) != 24 {
+		return [64]byte{}, errors.New("expected a 24-word BIP-39 mnemonic")
+	}
+	entropy, err := bip39.EntropyFromMnemonic(strings.Join(words, " "))
+	if err != nil {
+		if errors.Is(err, bip39.ErrChecksumIncorrect) {
+			return [64]byte{}, ErrMnemonicChecksum
+		}
+		// With exactly 24 words, the remaining decoder error contains the unknown word.
+		return [64]byte{}, ErrMnemonicWord
+	}
+	defer clear(entropy)
+
+	block := hmacSHA512([]byte("MPC seed"), entropy)
+	defer clear(block[:])
+	for _, field := range [...]uint32{purposeMasterKeyDerive, algorithm, alternativeIndex} {
+		var input [36]byte
+		copy(input[:], block[32:])
+		binary.BigEndian.PutUint32(input[32:], field)
+		block = hmacSHA512(block[:32], input[:])
+		clear(input[:])
+	}
+
+	return block, nil
 }
 
 // VerifyCMPBackup checks one mnemonic against the saved public contribution for
@@ -134,13 +144,7 @@ func CombineCMPPublicContributions(contributions [3]CMPPublicContribution) (CMPP
 		var jacobian secp256k1.JacobianPoint
 		point.AsJacobian(&jacobian)
 		secp256k1.AddNonConst(&total, &jacobian, &total)
-		// Sum big-endian chain codes modulo 2^256.
-		var carry uint16
-		for j := len(wallet.ChainCode) - 1; j >= 0; j-- {
-			sum := uint16(wallet.ChainCode[j]) + uint16(contribution.ChainCode[j]) + carry
-			wallet.ChainCode[j] = byte(sum)
-			carry = sum >> 8
-		}
+		addChainCode(&wallet.ChainCode, contribution.ChainCode)
 	}
 	if total.Z.IsZero() {
 		return CMPPublicContribution{}, errors.New("aggregate CMP public key is the point at infinity")
@@ -148,6 +152,16 @@ func CombineCMPPublicContributions(contributions [3]CMPPublicContribution) (CMPP
 	total.ToAffine()
 	copy(wallet.PublicKey[:], secp256k1.NewPublicKey(&total.X, &total.Y).SerializeCompressed())
 	return wallet, nil
+}
+
+// addChainCode sums big-endian chain codes modulo 2^256.
+func addChainCode(total *[32]byte, share [32]byte) {
+	var carry uint16
+	for i := len(total) - 1; i >= 0; i-- {
+		sum := uint16(total[i]) + uint16(share[i]) + carry
+		total[i] = byte(sum)
+		carry = sum >> 8
+	}
 }
 
 // RecoverCMPPrivateKey reconstructs the full signing key on an offline machine.
