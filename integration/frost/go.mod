@@ -16,4 +16,4 @@ require (
 
 replace github.com/C18519898242/mpc-wallet-recovery => ../..
 
-replace github.com/taurusgroup/frost-ed25519 => ../../../frost-ed25519
+replace github.com/taurusgroup/frost-ed25519 => github.com/C18519898242/frost-ed25519 v0.0.0-20261114073414-a5e5b68e2b45

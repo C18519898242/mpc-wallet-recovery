@@ -53,7 +53,7 @@ secp256k1 主私钥 `Scalar` 及其 `ChainCode`。创建和日常签名阶段无
 
 - 根目录运行 `go test ./...`，核对官方向量和恢复校验。
 - 在 `integration` 目录运行 `go test ./... -timeout=120s`，验证三方建钥、RID 一致性，以及 MPC 签名和离线私钥签名都能通过原公钥验签。
-- 将新版 `frost-ed25519` 放在本仓库旁边，在 `integration/frost` 运行 `go test ./...`，验证三方 FROST DKG 和离线签名使用同一个公钥。
+- 在 `integration/frost` 运行 `go test ./...`，验证三方 FROST DKG、离线恢复及 `[0,1]` 非硬化派生。MPC 与离线签名应通过同一个子公钥验签。测试使用该目录 `go.mod` 锁定的 FROST fork。
 
 官方向量由 `@safeheron/master-key-derive@2.0.1` 从公开测试词生成。可在临时目录用 `npm install --ignore-scripts --save-exact @safeheron/master-key-derive@2.0.1` 安装该包，将 `NODE_PATH` 指向临时目录的 `node_modules`，再从项目根目录运行 `node testdata/generate-safeheron-cmp.cjs`，将输出与 `testdata/safeheron-cmp-v2.json` 对照。
 给生成命令加上 `ed25519` 参数可重新生成 `testdata/safeheron-ed25519-v2.json`。

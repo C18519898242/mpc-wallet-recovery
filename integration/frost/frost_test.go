@@ -10,6 +10,7 @@ import (
 
 	"filippo.io/edwards25519"
 	"github.com/C18519898242/mpc-wallet-recovery/recovery"
+	"github.com/taurusgroup/frost-ed25519/pkg/eddsa"
 	"github.com/taurusgroup/frost-ed25519/pkg/frost"
 	"github.com/taurusgroup/frost-ed25519/pkg/frost/keygen"
 	"github.com/taurusgroup/frost-ed25519/pkg/frost/party"
@@ -89,6 +90,47 @@ func TestFROSTBackup(t *testing.T) {
 	}
 	if !ed25519.Verify(expected, message, signWithScalar(t, key.Scalar, expected, message)) {
 		t.Fatal("offline signature failed verification against the DKG public key")
+	}
+
+	path := []uint32{0, 1}
+	child, childCode, err := outputs[0].Public.GroupKey.Derive(wallet.ChainCode, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	childPublicKey := child.ToEd25519()
+	offlineScalar, offlineCode, err := eddsa.DeriveSigningScalar(key.Scalar, key.ChainCode, path)
+	if err != nil || offlineCode != childCode {
+		t.Fatalf("offline child derivation failed: %v", err)
+	}
+	scalar, err := edwards25519.NewScalar().SetCanonicalBytes(offlineScalar[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	offlinePublicKey := edwards25519.NewIdentityPoint().ScalarBaseMult(scalar).Bytes()
+	if !childPublicKey.Equal(ed25519.PublicKey(offlinePublicKey)) || childPublicKey.Equal(expected) {
+		t.Fatal("offline child public key does not match the derived MPC public key")
+	}
+	if !ed25519.Verify(childPublicKey, message, signWithScalar(t, offlineScalar, childPublicKey, message)) {
+		t.Fatal("invalid offline child signature")
+	}
+	for i, config := range outputs {
+		secret, public, err := config.Public.DeriveShare(config.SecretKey, wallet.ChainCode, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !public.GroupKey.Equal(child) {
+			t.Fatalf("node %d derived a different public key", ids[i])
+		}
+		states[i], signatures[i], err = frost.NewSignState(ids, secret, public, message, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	runFROST(t, states)
+	for _, out := range signatures {
+		if out.Signature == nil || !ed25519.Verify(childPublicKey, message, out.Signature.ToEd25519()) {
+			t.Fatal("invalid MPC child signature")
+		}
 	}
 }
 
